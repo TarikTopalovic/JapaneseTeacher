@@ -1,0 +1,8 @@
+streamlit
+faster-whisper
+yt-dlp
+nvidia-ml-py3
+pykakasi
+jamdict
+sudachipy
+pytest
