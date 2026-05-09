@@ -33,3 +33,4 @@ Testing
 pip install -U pytest
 pytest -q
 ```
+# JapaneseTeacher
