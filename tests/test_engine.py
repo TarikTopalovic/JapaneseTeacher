@@ -1,7 +1,4 @@
-import types
-import pytest
-
-from engine import ImmersionEngine
+from core.engine import AudioEngine
 
 
 class FakeSegment:
@@ -11,60 +8,130 @@ class FakeSegment:
         self.text = text
 
 
-def make_fake_whisper(behaviour):
-    """Return a Fake WhisperModel class according to behaviour dict.
+def make_fake_whisper(init_fail=None, runtime_fail=None):
+    init_fail = init_fail or set()
+    runtime_fail = runtime_fail or set()
 
-    behaviour rules:
-      - raise_on: set of (model, device) tuples that should raise on init
-      - succeed_on: set of (model, device) tuples that should succeed
-    """
-
-    class Fake:
-        last_init = None
+    class FakeWhisperModel:
+        init_calls = []
 
         def __init__(self, model, device="cpu", compute_type=None):
-            Fake.last_init = (model, device)
-            if (model, device) in behaviour.get("raise_on", set()):
+            self.device = device
+            self.compute_type = compute_type
+            self.__class__.init_calls.append((model, device, compute_type))
+            if (model, device, compute_type) in init_fail:
                 raise RuntimeError("libcublas.so.12 is not found or cannot be loaded")
 
         def transcribe(self, file_path, beam_size=5, language="ja"):
-            # Return a single fake segment and None for second return value
-            return ([FakeSegment(0.0, 1.0, "テスト")], None)
+            if (self.device, self.compute_type) in runtime_fail:
+                raise RuntimeError("cuBLAS failed with status CUBLAS_STATUS_NOT_SUPPORTED")
+            return [FakeSegment(0.0, 1.0, "テスト")], None
 
-    return Fake
+    return FakeWhisperModel
 
 
-def test_transcribe_falls_back_to_cpu_on_libcublas(monkeypatch):
-    # Simulate CUDA init failure (libcublas missing) but CPU works
-    fake = make_fake_whisper({
-        "raise_on": {("large-v3", "cuda")}
-    })
-    monkeypatch.setattr("engine.WhisperModel", fake)
+def test_transcribe_rejects_cpu_device(monkeypatch):
+    fake_whisper = make_fake_whisper()
+    monkeypatch.setattr("core.engine.WhisperModel", fake_whisper)
+    monkeypatch.setenv("WHISPER_GPU_COMPUTE_FALLBACKS", "float16")
 
-    eng = ImmersionEngine()
-    eng.model_name = "large-v3"
-    eng.preferred_device = "cuda"
+    eng = AudioEngine()
+    eng.device = "cpu"
+    eng.compute_type = "int8"
+    eng.speaker_tracker.assign = lambda _path, segs: [{**seg, "speaker": "SPEAKER_1"} for seg in segs]
+
+    try:
+        eng.transcribe("dummy.mp4")
+        assert False, "Expected RuntimeError"
+    except RuntimeError as e:
+        assert "WHISPER_DEVICE must be 'cuda'" in str(e)
+    assert fake_whisper.init_calls == []
+
+
+def test_transcribe_runs_on_cuda_when_available(monkeypatch):
+    fake_whisper = make_fake_whisper()
+    monkeypatch.setattr("core.engine.WhisperModel", fake_whisper)
+    monkeypatch.setenv("WHISPER_GPU_COMPUTE_FALLBACKS", "float16")
+
+    eng = AudioEngine()
+    eng.model_name = "medium"
+    eng.device = "cuda"
+    eng.compute_type = "int8_float16"
+    eng.speaker_tracker.assign = lambda _path, segs: [{**seg, "speaker": "SPEAKER_1"} for seg in segs]
 
     result = eng.transcribe("dummy.mp4")
-    assert isinstance(result, list)
-    assert result[0]["text"] == "テスト"
+
+    assert result == [{"start": 0.0, "end": 1.0, "text": "テスト", "speaker": "SPEAKER_1"}]
+    assert fake_whisper.init_calls == [("medium", "cuda", "int8_float16")]
 
 
-def test_prefers_smaller_model_if_large_oom(monkeypatch):
-    # Simulate large-v3 failing on cuda, medium succeeding on cuda
-    fake = make_fake_whisper({
-        "raise_on": {("large-v3", "cuda")}
-    })
-    monkeypatch.setattr("engine.WhisperModel", fake)
+def test_transcribe_retries_with_other_cuda_compute(monkeypatch):
+    fake_whisper = make_fake_whisper(runtime_fail={("cuda", "int8_float16")})
+    monkeypatch.setattr("core.engine.WhisperModel", fake_whisper)
+    monkeypatch.setenv("WHISPER_GPU_COMPUTE_FALLBACKS", "float16")
 
-    eng = ImmersionEngine()
-    eng.model_name = "large-v3"
-    eng.preferred_device = "cuda"
+    eng = AudioEngine()
+    eng.model_name = "medium"
+    eng.device = "cuda"
+    eng.compute_type = "int8_float16"
+    eng.speaker_tracker.assign = lambda _path, segs: [{**seg, "speaker": "SPEAKER_1"} for seg in segs]
 
-    # Call transcribe which triggers lazy init
-    _ = eng.transcribe("dummy.mp4")
+    result = eng.transcribe("dummy.mp4")
 
-    # Ensure the Fake model was initialized at least once
-    assert fake.last_init is not None
-    # Should have tried cuda first
-    assert fake.last_init[1] in {"cuda", "cpu"}
+    assert result == [{"start": 0.0, "end": 1.0, "text": "テスト", "speaker": "SPEAKER_1"}]
+    assert fake_whisper.init_calls == [
+        ("medium", "cuda", "int8_float16"),
+        ("medium", "cuda", "float16"),
+    ]
+
+
+def test_transcribe_raises_when_all_cuda_runtime_modes_fail(monkeypatch):
+    fake_whisper = make_fake_whisper(
+        runtime_fail={("cuda", "int8_float16"), ("cuda", "float16")}
+    )
+    monkeypatch.setattr("core.engine.WhisperModel", fake_whisper)
+    monkeypatch.setenv("WHISPER_GPU_COMPUTE_FALLBACKS", "float16")
+
+    eng = AudioEngine()
+    eng.model_name = "medium"
+    eng.device = "cuda"
+    eng.compute_type = "int8_float16"
+    eng.speaker_tracker.assign = lambda _path, segs: [{**seg, "speaker": "SPEAKER_1"} for seg in segs]
+
+    try:
+        eng.transcribe("dummy.mp4")
+        assert False, "Expected RuntimeError"
+    except RuntimeError as e:
+        assert "Whisper GPU runtime failed for all compute modes" in str(e)
+        assert "CUBLAS_STATUS_NOT_SUPPORTED" in str(e)
+    assert fake_whisper.init_calls == [
+        ("medium", "cuda", "int8_float16"),
+        ("medium", "cuda", "float16"),
+    ]
+
+
+def test_transcribe_raises_when_all_cuda_init_modes_fail(monkeypatch):
+    fake_whisper = make_fake_whisper(
+        init_fail={
+            ("medium", "cuda", "int8_float16"),
+            ("medium", "cuda", "float16"),
+        }
+    )
+    monkeypatch.setattr("core.engine.WhisperModel", fake_whisper)
+    monkeypatch.setenv("WHISPER_GPU_COMPUTE_FALLBACKS", "float16")
+
+    eng = AudioEngine()
+    eng.model_name = "medium"
+    eng.device = "cuda"
+    eng.compute_type = "int8_float16"
+    eng.speaker_tracker.assign = lambda _path, segs: [{**seg, "speaker": "SPEAKER_1"} for seg in segs]
+
+    try:
+        eng.transcribe("dummy.mp4")
+        assert False, "Expected RuntimeError"
+    except RuntimeError as e:
+        assert "Whisper GPU initialization failed for all compute modes" in str(e)
+    assert fake_whisper.init_calls == [
+        ("medium", "cuda", "int8_float16"),
+        ("medium", "cuda", "float16"),
+    ]
