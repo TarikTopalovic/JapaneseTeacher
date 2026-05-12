@@ -135,3 +135,41 @@ def test_transcribe_raises_when_all_cuda_init_modes_fail(monkeypatch):
         ("medium", "cuda", "int8_float16"),
         ("medium", "cuda", "float16"),
     ]
+
+
+def test_transcribe_falls_back_to_cpu_when_enabled_and_cuda_init_fails(monkeypatch):
+    fake_whisper = make_fake_whisper(
+        init_fail={
+            ("medium", "cuda", "int8_float16"),
+            ("medium", "cuda", "float16"),
+        }
+    )
+    monkeypatch.setattr("core.engine.WhisperModel", fake_whisper)
+    monkeypatch.setenv("WHISPER_GPU_COMPUTE_FALLBACKS", "float16")
+    monkeypatch.setenv("WHISPER_ALLOW_CPU_FALLBACK", "1")
+
+    eng = AudioEngine()
+    eng.model_name = "medium"
+    eng.device = "cuda"
+    eng.compute_type = "int8_float16"
+    eng.speaker_tracker.assign = lambda _path, segs: [{**seg, "speaker": "SPEAKER_1"} for seg in segs]
+
+    result = eng.transcribe("dummy.mp4")
+
+    assert result == [{"start": 0.0, "end": 1.0, "text": "テスト", "speaker": "SPEAKER_1"}]
+    assert fake_whisper.init_calls == [
+        ("medium", "cuda", "int8_float16"),
+        ("medium", "cuda", "float16"),
+        ("medium", "cpu", "int8"),
+    ]
+
+
+def test_runtime_settings_reports_available_models(monkeypatch):
+    fake_whisper = make_fake_whisper()
+    monkeypatch.setattr("core.engine.WhisperModel", fake_whisper)
+
+    eng = AudioEngine()
+    settings = eng.runtime_settings()
+
+    assert "large-v3" in settings["available_models"]
+    assert settings["model_name"] in settings["available_models"]

@@ -1,7 +1,15 @@
-"__pycache__/
+__pycache__/
 .venv/
 temp_uploads/
 *.db
+*.db-shm
+*.db-wal
 .idea/
 .vscode/
-.DS_Store"
+.DS_Store
+storage/db/*
+storage/media/downloads/*
+storage/media/uploads/*
+!storage/db/.gitkeep
+!storage/media/downloads/.gitkeep
+!storage/media/uploads/.gitkeep

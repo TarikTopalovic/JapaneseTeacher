@@ -20,6 +20,7 @@ import csv
 import io
 import json
 import logging
+import shutil
 import sqlite3
 from datetime import datetime
 from pathlib import Path
@@ -63,7 +64,27 @@ class ImmersionDB:
 
     def __init__(self, path: Optional[str] = None) -> None:
         self.path = Path(path or settings.database.path)
+        self.path.parent.mkdir(parents=True, exist_ok=True)
+        self._migrate_legacy_root_db()
         self._init_db()
+
+    def _migrate_legacy_root_db(self) -> None:
+        """
+        Move old root-level immersion.db into storage/db on first run.
+        Keeps existing user vocab/history while cleaning project root.
+        """
+        legacy = Path('immersion.db')
+        if self.path.exists() or not legacy.exists():
+            return
+        try:
+            shutil.move(str(legacy), str(self.path))
+            for suffix in ('-shm', '-wal'):
+                legacy_sidecar = Path(f'immersion.db{suffix}')
+                if legacy_sidecar.exists():
+                    shutil.move(str(legacy_sidecar), str(self.path) + suffix)
+            logger.info(f'Migrated legacy DB to {self.path}')
+        except Exception as e:
+            logger.warning(f'Legacy DB migration skipped: {e}')
 
     # ------------------------------------------------------------------
     # Connection

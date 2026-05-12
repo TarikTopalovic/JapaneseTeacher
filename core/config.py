@@ -1,5 +1,5 @@
 class DBSettings:
-    path: str = "immersion.db"
+    path: str = "storage/db/immersion.db"
     wal_mode: bool = True
 
 class Settings:

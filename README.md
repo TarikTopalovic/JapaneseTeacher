@@ -23,6 +23,11 @@ hayaku-pro/
 ├── server.py               # FastAPI backend + API routes
 ├── static/
 │   └── index.html          # Main web UI
+├── storage/
+│   ├── db/                 # SQLite database location
+│   └── media/
+│       ├── uploads/        # Temporary uploads while processing
+│       └── downloads/      # Temporary YouTube audio downloads
 ├── start.sh                # One-command launcher
 └── core/
     ├── engine.py           # Whisper transcription (faster-whisper)
@@ -84,6 +89,11 @@ hayaku-pro/
 ├── server.py
 ├── static/
 │   └── index.html
+├── storage/
+│   ├── db/
+│   └── media/
+│       ├── uploads/
+│       └── downloads/
 ├── start.sh
 └── core/
     ├── __init__.py     ← create this empty file
@@ -169,14 +179,15 @@ Open [http://localhost:8000](http://localhost:8000) in your browser.
 The main page. Two input methods:
 
 **YouTube link**
-1. Paste any YouTube URL into the text box — the video plays immediately in the browser via native streaming (no download wait)
-2. Click **ANALYZE YOUTUBE AUDIO** — the app downloads only the audio stream in the background, runs Whisper, speaker diarization, sentence translation, then Jamdict lookup
-3. The transcript appears on the right as interactive word cards
+1. Paste any YouTube URL into the text box
+2. Click **Analyze**
+3. Video opens immediately and you can watch while transcription/translation runs in segment chunks
+4. Transcript and subtitle cards fill in progressively as chunks complete
 
 **Local file**
 1. Drag and drop an `.mp4`, `.mp3`, or `.wav` file
-2. Click **ANALYZE LOCAL MEDIA**
-3. Same pipeline runs on your file
+2. Click **Analyze**
+3. Player opens immediately; processing continues in the background with progressive transcript updates
 
 **Using the transcript**
 - **Hover any word** → tooltip shows the word, its romaji reading, and the dictionary meaning
@@ -189,8 +200,9 @@ The main page. Two input methods:
 - **Transcript tools**: live filter, copy current sentence, JSON export
 - **Anki export**: one-click TSV export (`Word`, `Reading`, `Meaning`, `Sentence`, `Translation`)
 - **Immersion toggles**: Furigana show/hide + subtitle blur mode for listening-first sessions
-- **Theme switcher**: Noir Violet, Graphite Blue, Kuro Pink
+- **Theme switcher**: Noir Violet, Graphite Blue, Kuro Pink, Warm Beige
 - **Player shortcuts**: `j` = previous segment, `k` = next segment, `f` = furigana toggle, `b` = blur toggle
+- **Whisper runtime controls**: choose model from UI and enable RAM fallback mode when VRAM is tight
 
 ### Vocab Analytics
 
@@ -226,7 +238,9 @@ This keeps lookups instant while still handling conjugations correctly.
 
 ## Data storage
 
-Everything is stored in a single SQLite file: `immersion.db` in the project root.
+Everything is stored under `storage/` to keep the project root clean.
+
+Main database file: `storage/db/immersion.db`
 
 | Table | Contents |
 |---|---|
@@ -239,7 +253,7 @@ The database uses WAL mode for better read performance. To change the path, edit
 
 ```python
 class DBSettings:
-    path: str = "immersion.db"
+    path: str = "storage/db/immersion.db"
 ```
 
 ---

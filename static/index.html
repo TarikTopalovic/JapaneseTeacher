@@ -39,6 +39,11 @@ body.theme-kuro {
   --text:#f2f2f2; --muted:#a9a9a9; --dim:#666; --red:#ff4c7a; --red-glow:rgba(255,76,122,0.20);
   --blue:#84d2ff; --amber:#ffc66a; --green:#4ae3a2;
 }
+body.theme-beige {
+  --bg:#ede6d8; --s1:#f5eedf; --s2:#e6dcc8; --border:rgba(114,92,64,0.22);
+  --text:#3b2f22; --muted:#7a6650; --dim:#a08b72; --red:#b06a3b; --red-glow:rgba(176,106,59,0.18);
+  --blue:#5a7d8d; --amber:#a9772b; --green:#5f8f58;
+}
 *, *::before, *::after { box-sizing: border-box; margin:0; padding:0; }
 html, body { height: 100%; overflow: hidden; background: var(--bg); color: var(--text); font-family: 'Syne', 'Noto Sans JP', sans-serif; }
 
@@ -153,6 +158,18 @@ body { display:flex; flex-direction:column; }
 .history-item:last-child { border-bottom:none; }
 .history-title { font-size:12px; font-weight:700; }
 .history-meta { font-size:10px; color:var(--muted); font-family:'JetBrains Mono',monospace; }
+.settings-row {
+  margin-top:14px; display:grid; grid-template-columns:1fr 1fr auto; gap:8px;
+  background:var(--s1); border:1px solid var(--border); border-radius:var(--r); padding:10px;
+}
+.settings-row label { font-size:11px; color:var(--muted); font-weight:700; margin-bottom:4px; display:block; }
+.settings-row select, .settings-row button {
+  width:100%; background:var(--s2); border:1px solid var(--border); border-radius:var(--rs);
+  color:var(--text); font-family:inherit; font-size:12px; padding:8px;
+}
+.settings-row button { cursor:pointer; font-weight:700; }
+.toggle-wrap { display:flex; align-items:center; gap:6px; font-size:12px; color:var(--muted); }
+.settings-status { margin-top:6px; font-size:11px; color:var(--muted); font-family:'JetBrains Mono',monospace; }
 
 /* Progress */
 .progress-box { margin-top:20px; padding:20px 24px; background:var(--s1);
@@ -199,9 +216,15 @@ body { display:flex; flex-direction:column; }
   border-radius:var(--rs); font-family:inherit; font-size:12px; font-weight:700; padding:8px 10px; cursor:pointer;
 }
 .sub-tool-btn:hover { color:var(--text); border-color:rgba(230,57,70,0.4); }
-.current-words { display:flex; flex-wrap:wrap; gap:4px; align-items:flex-end; margin-bottom:10px; min-height:48px; }
-.current-trans { font-size:12px; color:var(--muted); padding:8px 12px; background:var(--s2); border-radius:var(--rs); display:none; }
-.current-trans.show { display:block; }
+.subtitle-ja {
+  font-family:'Noto Sans JP',sans-serif; font-size:34px; font-weight:700; line-height:1.35;
+  margin:4px 0 8px; color:var(--text); text-shadow:0 2px 12px rgba(0,0,0,.35);
+}
+.subtitle-en {
+  font-size:16px; line-height:1.45; color:var(--muted); margin-bottom:12px;
+  padding:8px 12px; background:var(--s2); border:1px solid var(--border); border-radius:var(--rs);
+}
+.current-words { display:flex; flex-wrap:wrap; gap:4px; align-items:flex-end; min-height:42px; }
 
 /* Right column — info panel */
 .info-panel {
@@ -357,6 +380,7 @@ body.blur-subs .wc.active .wc-t { filter:none; opacity:1; }
       <option value="theme-noir">Noir Violet</option>
       <option value="theme-graphite">Graphite Blue</option>
       <option value="theme-kuro">Kuro Pink</option>
+      <option value="theme-beige">Warm Beige</option>
     </select>
     <button id="toggle-reading-btn" class="hdr-btn" type="button" title="Toggle Furigana (F)">Furigana</button>
     <button id="toggle-blur-btn" class="hdr-btn" type="button" title="Blur Subtitles (B)">Blur</button>
@@ -394,6 +418,29 @@ body.blur-subs .wc.active .wc-t { filter:none; opacity:1; }
         </div>
       </div>
     </div>
+    <div class="settings-row">
+      <div>
+        <label for="whisper-model">Whisper model</label>
+        <select id="whisper-model">
+          <option value="tiny">tiny</option>
+          <option value="base">base</option>
+          <option value="small">small</option>
+          <option value="medium">medium</option>
+          <option value="large-v3">large-v3</option>
+        </select>
+      </div>
+      <div>
+        <label for="whisper-cpu-fallback">VRAM overflow mode</label>
+        <div class="toggle-wrap">
+          <input id="whisper-cpu-fallback" type="checkbox">
+          <span>Allow RAM fallback (CPU)</span>
+        </div>
+      </div>
+      <div style="display:flex;align-items:end;">
+        <button id="save-whisper-btn" type="button">Apply</button>
+      </div>
+    </div>
+    <div id="whisper-settings-status" class="settings-status">Loading Whisper settings…</div>
 
     <div class="progress-box" id="progress-box">
       <div class="prog-stage" id="prog-stage">Initializing...</div>
@@ -416,17 +463,18 @@ body.blur-subs .wc.active .wc-t { filter:none; opacity:1; }
     </div>
 
       <div class="sub-bar">
-        <div class="sub-bar-label">Current Segment</div>
+        <div class="sub-bar-label">Live Subtitles</div>
         <div class="sub-tools">
           <input id="segment-search" class="sub-tool-input" type="text" placeholder="Filter transcript text...">
           <button id="copy-sentence-btn" class="sub-tool-btn" type="button">Copy Sentence</button>
           <button id="download-transcript-btn" class="sub-tool-btn" type="button">Export JSON</button>
           <button id="export-anki-btn" class="sub-tool-btn" type="button">Anki TSV</button>
         </div>
+        <div class="subtitle-ja" id="subtitle-ja">Play video while transcript processes…</div>
+        <div class="subtitle-en" id="subtitle-en">Translation appears here as chunks finish.</div>
         <div class="current-words" id="current-words">
-          <span style="color:var(--dim);font-size:13px;">Play the video to see words appear here</span>
+          <span style="color:var(--dim);font-size:13px;">Token cards appear per subtitle segment.</span>
         </div>
-      <div class="current-trans" id="current-trans"></div>
     </div>
 
     <div class="transcript-panel">
@@ -502,6 +550,7 @@ const S = {
   transcriptOpen: true, infoTab: 'word', sessionHistory: [],
   mediaMeta: null, transcriptFilter: '',
   showReading: true, blurSubtitles: false, theme: 'theme-noir',
+  whisperModel: 'medium', whisperCpuFallback: false,
 };
 
 window.onYouTubeIframeAPIReady = () => { S.ytReady = true; };
@@ -548,7 +597,7 @@ function switchInfoTab(id, btn) {
 function updateVisualToggles() {
   document.body.classList.toggle('no-reading', !S.showReading);
   document.body.classList.toggle('blur-subs', S.blurSubtitles);
-  document.body.classList.remove('theme-noir', 'theme-graphite', 'theme-kuro');
+  document.body.classList.remove('theme-noir', 'theme-graphite', 'theme-kuro', 'theme-beige');
   document.body.classList.add(S.theme);
   document.getElementById('toggle-reading-btn').classList.toggle('active', !S.showReading);
   document.getElementById('toggle-blur-btn').classList.toggle('active', S.blurSubtitles);
@@ -576,6 +625,53 @@ function loadUiPrefs() {
   } catch (e) {}
 }
 
+function setWhisperStatus(msg, isError=false) {
+  const el = document.getElementById('whisper-settings-status');
+  el.textContent = msg;
+  el.style.color = isError ? '#ef4444' : '';
+}
+
+async function loadWhisperSettings() {
+  try {
+    const r = await fetch('/api/settings/whisper');
+    const data = await r.json();
+    const modelEl = document.getElementById('whisper-model');
+    if (Array.isArray(data.available_models) && data.available_models.length) {
+      modelEl.innerHTML = data.available_models.map(name => `<option value="${esc(name)}">${esc(name)}</option>`).join('');
+    }
+    S.whisperModel = data.model_name || 'medium';
+    S.whisperCpuFallback = !!data.allow_cpu_fallback;
+    const fallbackEl = document.getElementById('whisper-cpu-fallback');
+    modelEl.value = S.whisperModel;
+    fallbackEl.checked = S.whisperCpuFallback;
+    setWhisperStatus(`Model=${S.whisperModel} · RAM fallback=${S.whisperCpuFallback ? 'on' : 'off'}`);
+  } catch (e) {
+    setWhisperStatus('Could not load Whisper settings.', true);
+  }
+}
+
+async function saveWhisperSettings() {
+  const model = document.getElementById('whisper-model').value;
+  const allowCpuFallback = document.getElementById('whisper-cpu-fallback').checked;
+  try {
+    const r = await fetch('/api/settings/whisper', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({ model_name: model, allow_cpu_fallback: allowCpuFallback }),
+    });
+    if (!r.ok) {
+      const err = await r.json();
+      throw new Error(err.detail || 'Update failed');
+    }
+    const data = await r.json();
+    S.whisperModel = data.model_name || model;
+    S.whisperCpuFallback = !!data.allow_cpu_fallback;
+    setWhisperStatus(`Applied: model=${S.whisperModel}, RAM fallback=${S.whisperCpuFallback ? 'on' : 'off'}`);
+  } catch (e) {
+    setWhisperStatus(`Failed: ${e.message || e}`, true);
+  }
+}
+
 async function submitYT() {
   const url = document.getElementById('yt-input').value.trim();
   if (!url) return;
@@ -584,12 +680,15 @@ async function submitYT() {
   resetActiveSession();
   S.isYT = true; S.ytVideoId = vid;
   S.mediaMeta = { sourceType: 'youtube', sourceLabel: url, ytVideoId: vid };
+  showPage('player');
+  setupVideo();
   showProgressBox();
   setStage('Submitting to server...');
   const r = await fetch('/api/analyze/youtube?url=' + encodeURIComponent(url), {method:'POST'});
   const d = await r.json();
   S.jobId = d.job_id;
   startPolling();
+  setSub('You can watch now. Transcript fills in chunk-by-chunk.');
 }
 
 document.getElementById('file-input').addEventListener('change', e => {
@@ -601,6 +700,8 @@ async function submitFile(file) {
   S.isYT = false;
   S.videoBlob = URL.createObjectURL(file);
   S.mediaMeta = { sourceType: 'file', sourceLabel: file.name };
+  showPage('player');
+  setupVideo();
   showProgressBox();
   setStage('Uploading file...');
   const fd = new FormData(); fd.append('file', file);
@@ -608,6 +709,7 @@ async function submitFile(file) {
   const d = await r.json();
   S.jobId = d.job_id;
   startPolling();
+  setSub('You can watch now. Transcript fills in chunk-by-chunk.');
 }
 
 function showProgressBox() {
@@ -632,7 +734,8 @@ async function pollJob() {
     const r = await fetch('/api/job/' + S.jobId);
     const job = await r.json();
     applyJobState(job);
-    if (job.status === 'done') { clearInterval(S.pollTimer); onDone(job.result); }
+    if (Array.isArray(job.segments)) onPartial(job.segments);
+    if (job.status === 'done') { clearInterval(S.pollTimer); onDone(job.result || job.segments || []); }
     else if (job.status === 'error') { clearInterval(S.pollTimer); onError(job.error); }
   } catch(e) {
     setSub('Network error while checking job state...');
@@ -643,7 +746,7 @@ function applyJobState(job) {
     downloading: ['Downloading audio stream...', null, ''],
     transcribing: ['Transcribing speech with Whisper...', 40, ''],
     translating: [
-      'Tracking speaker · translating sentence · looking up words...',
+      'Building transcript chunks · translating sentence · looking up words...',
       job.total ? (job.progress / job.total * 100) : null,
       job.total ? `${job.progress} / ${job.total} segments complete` : '',
     ],
@@ -660,11 +763,8 @@ function onError(msg) {
 
 function onDone(segments) {
   if (!Array.isArray(segments)) return;
-  S.segments = segments;
   document.getElementById('status-pill').classList.add('hidden');
-  showPage('player');
-  renderTranscript(segments);
-  setupVideo();
+  onPartial(segments);
   const entry = {
     id: Date.now().toString(),
     createdAt: Date.now(),
@@ -674,6 +774,17 @@ function onDone(segments) {
     segments,
   };
   pushSessionHistory(entry);
+}
+
+function onPartial(segments) {
+  if (!Array.isArray(segments)) return;
+  const changed = segments.length !== S.segments.length;
+  S.segments = segments;
+  if (changed) renderTranscript(segments);
+  try {
+    const t = S.isYT && S.ytPlayer ? S.ytPlayer.getCurrentTime() : document.getElementById('local-video').currentTime;
+    syncVideo(t || 0);
+  } catch (e) {}
 }
 
 function setupVideo() {
@@ -731,17 +842,18 @@ function syncVideo(t) {
   // Update subtitle bar
   if (idx >= 0) {
     const seg = S.segments[idx];
-    document.getElementById('current-words').innerHTML = renderWords(seg.tokens, true);
-    const trans = document.getElementById('current-trans');
-    trans.textContent = seg.translation || '—'; trans.classList.add('show');
+    document.getElementById('subtitle-ja').textContent = seg.text || '—';
+    document.getElementById('subtitle-en').textContent = seg.translation || '—';
+    document.getElementById('current-words').innerHTML = renderWords(seg.tokens, false);
     // Update sentence panel
     document.getElementById('sentence-ja').textContent = `[${seg.speaker || 'SPEAKER_1'}] ${seg.text}`;
     document.getElementById('sentence-trans').textContent = seg.translation || '—';
     const best = (seg.tokens || []).find(tok => (tok.text || '').trim());
     if (best) selectWord(best);
   } else {
+    document.getElementById('subtitle-ja').textContent = 'No active subtitle yet.';
+    document.getElementById('subtitle-en').textContent = 'Keep watching while chunks process.';
     document.getElementById('current-words').innerHTML = '<span style="color:var(--dim);font-size:13px;">No active segment</span>';
-    document.getElementById('current-trans').classList.remove('show');
   }
 }
 
@@ -846,6 +958,10 @@ function resetActiveSession() {
   S.segments = [];
   S.activeSegIdx = -1;
   S.mediaMeta = null;
+  renderTranscript([]);
+  document.getElementById('subtitle-ja').textContent = 'Play video while transcript processes…';
+  document.getElementById('subtitle-en').textContent = 'Translation appears here as chunks finish.';
+  document.getElementById('current-words').innerHTML = '<span style="color:var(--dim);font-size:13px;">Token cards appear per subtitle segment.</span>';
   document.getElementById('progress-box').classList.remove('show');
   document.getElementById('prog-stage').style.color = '';
   setFill(0);
@@ -1015,6 +1131,7 @@ document.getElementById('segment-search').addEventListener('input', (e) => {
 document.getElementById('download-transcript-btn').addEventListener('click', downloadTranscriptJson);
 document.getElementById('copy-sentence-btn').addEventListener('click', copyCurrentSentence);
 document.getElementById('export-anki-btn').addEventListener('click', exportAnkiTsv);
+document.getElementById('save-whisper-btn').addEventListener('click', saveWhisperSettings);
 document.getElementById('toggle-reading-btn').addEventListener('click', () => {
   S.showReading = !S.showReading;
   updateVisualToggles();
@@ -1060,6 +1177,7 @@ function fmt(s) {
 
 loadUiPrefs();
 updateVisualToggles();
+loadWhisperSettings();
 loadSessionHistory();
 renderSessionHistory();
 initFromLocation();
