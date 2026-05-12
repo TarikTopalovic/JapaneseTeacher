@@ -9,7 +9,7 @@
 1. **Transcribes Japanese audio** using [faster-whisper](https://github.com/SYSTRAN/faster-whisper) (Whisper running locally, GPU-accelerated if available)
 2. **Tokenizes each sentence** using Sudachi (a proper Japanese morphological analyzer — handles compound words correctly)
 3. **Tracks speaker changes** using local pyannote diarization and labels each segment
-4. **Translates full sentences offline** using Argos Translate (Japanese → English)
+4. **Translates full sentences with provider fallback** (Google Translate via `deep-translator` first, then Argos offline fallback)
 5. **Looks up token meanings instantly** using Jamdict and Sudachi dictionary forms (base forms), so conjugated words resolve correctly
 6. **Shows an interactive transcript** where you can hover any word to see its reading and meaning, and click timestamps to jump in the video
 7. **Builds a vocab bank** of every word you've encountered, with frequency counts, so you can track what's appearing most in your immersion content
@@ -20,7 +20,10 @@
 
 ```
 hayaku-pro/
-├── app.py                  # Streamlit UI — all pages
+├── server.py               # FastAPI backend + API routes
+├── static/
+│   └── index.html          # Main web UI
+├── start.sh                # One-command launcher
 └── core/
     ├── engine.py           # Whisper transcription (faster-whisper)
     ├── speaker_tracking.py # pyannote speaker diarization
@@ -48,7 +51,8 @@ hayaku-pro/
 ### Python packages
 
 ```
-streamlit
+deep-translator
+fastapi
 faster-whisper
 argostranslate
 pyannote.audio
@@ -59,12 +63,14 @@ sudachidict-core
 pykakasi
 yt-dlp
 pandas
+python-multipart
+uvicorn
 ```
 
 Install all at once:
 
 ```bash
-pip install streamlit faster-whisper argostranslate pyannote.audio jamdict jamdict-data sudachipy sudachidict-core pykakasi yt-dlp pandas
+pip install deep-translator fastapi faster-whisper argostranslate pyannote.audio jamdict jamdict-data sudachipy sudachidict-core pykakasi yt-dlp pandas python-multipart uvicorn
 ```
 
 ---
@@ -75,7 +81,10 @@ pip install streamlit faster-whisper argostranslate pyannote.audio jamdict jamdi
 
 ```
 hayaku-pro/
-├── app.py
+├── server.py
+├── static/
+│   └── index.html
+├── start.sh
 └── core/
     ├── __init__.py     ← create this empty file
     ├── engine.py
@@ -99,6 +108,14 @@ pip install jamdict jamdict-data
 ```
 
 Argos language package (Japanese → English) installs automatically on first translation call.
+
+Translation provider controls:
+
+| Variable | Default | Purpose |
+|---|---|---|
+| `TRANSLATE_PROVIDER` | `google_then_argos` | `google_then_argos`, `google`, or `argos` |
+| `TRANSLATE_SOURCE_LANG` | `ja` | Source language code |
+| `TRANSLATE_TARGET_LANG` | `en` | Target language code |
 
 ### 3. Configure speaker tracking (pyannote)
 
@@ -138,10 +155,10 @@ Whisper is GPU-only in this project. If CUDA init/runtime fails, processing stop
 ### 5. Launch
 
 ```bash
-streamlit run app.py
+./start.sh
 ```
 
-Open [http://localhost:8501](http://localhost:8501) in your browser.
+Open [http://localhost:8000](http://localhost:8000) in your browser.
 
 ---
 
@@ -167,6 +184,13 @@ The main page. Two input methods:
 - **Speaker labels** are shown per segment (e.g. `SPEAKER_1`, `SPEAKER_2`)
 - **Full-sentence English translation** is shown for the active subtitle segment
 - Words are split at the morpheme level by Sudachi, so compound words and conjugations are handled correctly
+- **Recent Analyses** saves locally so you can reopen prior transcripts
+- **Browser back/forward** now keeps navigation accessible instead of dropping out immediately
+- **Transcript tools**: live filter, copy current sentence, JSON export
+- **Anki export**: one-click TSV export (`Word`, `Reading`, `Meaning`, `Sentence`, `Translation`)
+- **Immersion toggles**: Furigana show/hide + subtitle blur mode for listening-first sessions
+- **Theme switcher**: Noir Violet, Graphite Blue, Kuro Pink
+- **Player shortcuts**: `j` = previous segment, `k` = next segment, `f` = furigana toggle, `b` = blur toggle
 
 ### Vocab Analytics
 
@@ -241,7 +265,7 @@ class DBSettings:
 → Update yt-dlp: `pip install -U yt-dlp` (YouTube's formats change frequently)
 
 **`ModuleNotFoundError: No module named 'core'`**
-→ Make sure you're running `streamlit run app.py` from the project root, and that `core/__init__.py` exists.
+→ Make sure you're running `./start.sh` (or `python -m uvicorn server:app`) from the project root, and that `core/__init__.py` exists.
 
 **Sudachi dictionary not found**
 → Install the dictionary package: `pip install sudachidict-core`

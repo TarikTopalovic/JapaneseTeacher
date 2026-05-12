@@ -1,4 +1,5 @@
 argostranslate
+deep-translator
 fastapi
 faster-whisper
 jamdict
@@ -9,7 +10,6 @@ pyannote.audio
 pykakasi
 pytest
 python-multipart
-streamlit
 sudachidict-core
 sudachipy
 uvicorn
